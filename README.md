@@ -25,17 +25,23 @@ CHANGELOG (what changed from the original version):
 
 Architectural Changes
     - Reduced Maximum Bars (2 ➔ 1): Changed MAX_HEALTH_BARS to 1. The script now strictly handles a single boss health bar at a time globally.
+    
     - Shifted from Polling to Smart Event-Driven System: The original script completely reconstructed strings and hammered the network 40 times per second per player. This version uses a lightweight 1.0-second background checker that only triggers a full HUD draw/network broadcast when a true map state change happens (Damage, Connect, or Respawn).
+    
     - Removed Visual PVS Logic: Stripped out the SPAWNFLAG_HEALTHBAR_PVS_ONLY flag and its expensive inPVS() visibility checking loops. The health bar is now completely global and works perfectly regardless of player positions.
 
 Code Cleanup & Variable Removals
     - Removed Dual-Bar Spacing Logic: Completely removed the m_flOffset variable, the unused ShouldDrawText() helper function, and the GetHealthbarOffset() function.
+    
     - Cleaned Up KeyValue Inputs: Removed the unused offset configuration block from the map data interpreter (KeyValue), cleaning up unnecessary parameters.
+    
     - Array Adjustments: Rewrote all tracking indexes from dual-index tracking [0] & [1] down to a single index [0].
 
 Optimization & Feature Additions
     - Expanded Bar Length (50 ➔ 60): Adjusted m_iMaxCharacters to 60 for a wider, cleaner bar visual. This length fits perfectly across standard resolutions down to 640x480 without text-wrapping or clipping.
+    
     - Added Smart Memory Checkers: Introduced m_iLastBarValue and m_flLastRefreshTime to remember the state of the last update. If the boss takes zero damage, the server completely skips rebuilding strings and wasting bandwidth.
+    
     - Added Join & Respawn Interceptor: Added a high-speed player tracking function GetPlayerCounts() alongside m_iLastConnectedCount and m_iLastAliveCount. If a new player enters the server or a dead player respawns, the script catches it instantly on the next 1-second interval and forces a screen redraw.
     - Implemented Long Hold-Time Strategy: Pushed the default holdTime and m_flFailsafeInterval up to a massive 60 seconds, reducing normal background network chatter to an absolute crawl.
     - Added "Clear Message" Death Safety Protocol: Added the ClearBossHUD() function. When a boss dies (or when the entity is removed by the map), the script sends a zero-second blank message to completely wipe text channel 1 off everyone's screens instantly, preventing the long 60-second bar from freezing on screen.

@@ -12,11 +12,9 @@ namespace game_textbar
 {
 
 const int SF_START_INACTIVE = 1;
-
 const int MAX_HEALTH_BARS   = 1;
 
 array<EHandle> health_bar_entities( MAX_HEALTH_BARS );
-string CONFIG_HEALTH_BAR_NAME = "";
 
 class game_textbar : ScriptBaseEntity
 {
@@ -26,6 +24,7 @@ class game_textbar : ScriptBaseEntity
     private float m_flTimeToRemove;
     private int m_iMaxCharacters = 60; // 60 characters is safe for 640x480 minimum resolution
     private bool m_bIsActive = false;
+    private string m_szBarName = ""; 
 
     // CUSTOMIZABLE VISUAL PARAMETERS (via KeyValues)
     private uint8 m_r = 255;
@@ -126,7 +125,6 @@ class game_textbar : ScriptBaseEntity
     {
         UpdateHealthbarValue();
 
-        // If the entity is running its post-death removal countdown sequence, skip server tracking modifications
         if( m_flTimeToRemove > 0.0 )
             return;
 
@@ -156,14 +154,11 @@ class game_textbar : ScriptBaseEntity
 
     void use_game_textbar( CBaseEntity@ pActivator, CBaseEntity@ pCaller, USE_TYPE useType, float flValue )
     {
-        // Check if a VALID entity is occupying the health bar slot
         if( health_bar_entities[0].IsValid() )
         {
-            // If it's us, just return
             if( health_bar_entities[0].GetEntity() is self )
                 return;
 
-            // Otherwise, another bar is genuinely active. Prevent duplicates.
             g_Game.AlertMessage( at_error, "%1: too many health bars active\n", self.GetClassname() );
             g_EntityFuncs.Remove( self );
             return;
@@ -183,21 +178,41 @@ class game_textbar : ScriptBaseEntity
         m_hTarget = EHandle( target );
         health_bar_entities[0] = EHandle( self );
 
+        // 1. Priority Override: Did the mapper set a custom message name directly on this textbar?
         if( !string(pev.message).IsEmpty() )
         {
-            CONFIG_HEALTH_BAR_NAME = string( pev.message );
+            m_szBarName = string( pev.message );
         }
+        // 2. Is the target a player? Use their network handle profile name
         else if( target.pev.FlagBitSet(FL_CLIENT) )
         {
-            CONFIG_HEALTH_BAR_NAME = string( target.pev.netname );
+            m_szBarName = string( target.pev.netname );
         }
+        // 3. Mimicking Original Script: Extract Sven's auto-processed displayname formatting safely
+        else if( target.pev.FlagBitSet(FL_MONSTER) )
+        {
+            CBaseMonster@ pMonster = target.MyMonsterPointer();
+            if( pMonster !is null && !string(pMonster.m_FormattedName).IsEmpty() )
+            {
+                m_szBarName = string( pMonster.m_FormattedName );
+            }
+            else if( !string(target.pev.message).IsEmpty() )
+            {
+                m_szBarName = string( target.pev.message );
+            }
+            else
+            {
+                m_szBarName = "Boss";
+            }
+        }
+        // 4. Final Fallback if targeted at a breakable wall or general entity
         else if( !string(target.pev.message).IsEmpty() )
         {
-            CONFIG_HEALTH_BAR_NAME = string( target.pev.message );
+            m_szBarName = string( target.pev.message );
         }
         else
         {
-            CONFIG_HEALTH_BAR_NAME = "Boss";
+            m_szBarName = "Boss";
         }
 
         GetPlayerCounts(m_iLastConnectedCount, m_iLastAliveCount);
@@ -222,7 +237,7 @@ class game_textbar : ScriptBaseEntity
             sHealthBarVisual += "-";
         }
 
-        string sFinalHUDMessage = CONFIG_HEALTH_BAR_NAME + "\n" + sHealthBarVisual;
+        string sFinalHUDMessage = m_szBarName + "\n" + sHealthBarVisual;
         CG_DrawHUDStringAll( sFinalHUDMessage, flCustomHoldTime );
     }
 
@@ -266,13 +281,12 @@ class game_textbar : ScriptBaseEntity
         }
         else
         {
-            // Absolute check: target dead state validation rule
             if( !m_hTarget.IsValid() or m_hTarget.GetEntity().pev.health <= 0 or m_hTarget.GetEntity().pev.deadflag != DEAD_NO )
             {
                 if( m_flDelay > 0.0 )
                 {
                     m_flTimeToRemove = g_Engine.time + m_flDelay;
-                    m_iBarValue = 0; // True zero assigned ONLY after death occurs
+                    m_iBarValue = 0; 
                     DrawText( m_flDelay ); 
                 }
                 else
@@ -284,11 +298,9 @@ class game_textbar : ScriptBaseEntity
                 return;
             }
 
-            // Target is guaranteed alive past this checkpoint
             float health_remaining = m_hTarget.GetEntity().pev.health / m_hTarget.GetEntity().pev.max_health;
             m_iBarValue = int( health_remaining * float(m_iMaxCharacters) );
 
-            // EDGE CASE RECTIFICATION: Force at least 1 tick visible if the entity is alive
             if( m_iBarValue <= 0 )
             {
                 m_iBarValue = 1;
@@ -317,10 +329,7 @@ class game_textbar : ScriptBaseEntity
     void UpdateOnRemove()
     {
         ClearBossHUD(); 
-        
-        // Explicitly clear the global tracker by setting it to an unassigned EHandle
         health_bar_entities[0] = EHandle();
-
         BaseClass.UpdateOnRemove();
     }
 }

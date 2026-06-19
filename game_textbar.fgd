@@ -1,0 +1,24 @@
+@PointClass base(EditorFlags) color(220 0 0) size(-8 -8 -8, 8 8 8) = game_textbar : "Text-Based Boss Healthbar (Ultra-Optimized)"
+[
+    targetname(target_source) : "Name of the bar" 
+    target(target_destination) : "Boss targetname to track"
+    
+    spawnflags(Flags) =
+    [
+        1 : "Start Inactive" : 0
+    ]
+
+    message(string) : "Optional custom HUD name for the boss" : "" : "(default is the boss displayname, or 'boss' if not found)"
+    delay(string) : "Post-Death Duration" : "0.0" : "How many seconds the empty healthbar stays on the players' screen after the boss dies"
+    
+    color(string) : "HUD Bar Color (R G B)" : "" : "255 0 0 (default)"
+    x(string) : "Horizontal Position (X)" : "" : "-1.0 (default centered)"
+    y(string) : "Vertical Position (Y)" : "" : "0.08 (default top)"
+    channel(choices) : "HUD Text Channel" : 1 =
+    [
+        1 : "Channel 1 (Default)"
+        2 : "Channel 2"
+        3 : "Channel 3"
+        4 : "Channel 4"
+    ]
+]

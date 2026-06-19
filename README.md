@@ -1,6 +1,6 @@
-A heavy modification fork of target_healthbar by Nero https://github.com/Neyami/Various-Plugins/tree/main/HEALTHBAR
+A heavy modification fork of target_healthbar by Nero: https://github.com/Neyami/Various-Plugins/tree/main/HEALTHBAR
 
-# Sven Co-op Dynamic Boss Healthbar Script
+# Sven Co-op Dynamic Boss Healthbar Script (game_textbar)
 
 An ultra-optimized, event-driven AngelScript custom entity for **Sven Co-op** that renders a global boss healthbar using clean, centrally aligned HUD text parameters. 
 
@@ -10,32 +10,46 @@ This script completely replaces old, unoptimized sprite-based variations. It eli
 
 ## ✨ Features
 
-* **Global & Central Alignment:** Uses native `HUDTextParams` centering (`x = -1.0`), guaranteeing a perfectly centered boss layout on every player's monitor regardless of aspect ratio or resolution.
+* **Global Screen Alignment:** Uses native `HUDTextParams` formatting with absolute or centered configurations, guaranteeing a perfectly aligned boss layout on every player's monitor regardless of aspect ratio or resolution.
+* **Fully Customizable via Hammer/J.A.C.K.:** Mappers can now natively change the color (RGB), HUD channel, post-death delay, and screen coordinates directly within the entity keys.
 * **Single Boss Bar Focus:** Stripped of old multi-bar overlapping logic to maintain a clean, readable UI focusing on one epic encounter at a time.
 * **Ultra-Optimized Networking (Smart Refresh):** Instead of refreshing dozens of times per second, a lightweight 1.0-second background checker monitors data. It *only* broadcasts an actual update across the network if:
   1. The boss takes damage (health changes).
   2. A new player joins the server.
   3. A dead player respawns (catching HUD wipes instantly).
 * **60-Character Dynamic UI:** Carefully tuned to a 60-character maximum length (`||||----`), optimizing screen width for 1080p+ widescreen monitors while staying perfectly safe from text-wrapping breaks on retro low-resolution screens (like 640x480).
-* **"Clear Message" Safety Protocol:** Includes a failsafe handler. The second a boss dies, is removed, or the entity is killed by the map, a 0-second blank message is fired to immediately wipe the text channel off everyone's monitors so it never freezes in place.
+* **Automatic Name Cascade with Failsafe:** Zero setup required for basic naming. The entity automatically loops through an optimized hierarchy to grab names (`Custom message override` ➔ `Player Network Profile name` ➔ `Sven Co-op Monster DisplayName`). If all are blank, it defaults directly to an epic **"Boss"** identifier instead of leaking ugly raw engine classnames.
+* **Low-Health Edge-Case Protection:** Includes mathematical clamping protection. If a boss's health falls so low that calculations round down to 0 characters, the script forces a single visual tick (`|------`) to remain visible on the HUD. This keeps the execution loop alive and prevents the UI from prematurely disappearing while the boss is still fighting.
+* **Dynamic Post-Death Expiration Protocol:** Completely fixes lingering text problems. When the boss dies, the script dynamically overrides its massive network-saving hold time with the mapper's exact `delay` duration, forcing the text channel to naturally expire and flush out of the engine's internal buffer perfectly.
 
 ---
 
-CHANGELOG (what changed from the original version):
+## 🛠️ Level Editor Configuration (.FGD)
 
-**Architectural Changes**
-* Reduced Maximum Bars (2 ➔ 1): Changed MAX_HEALTH_BARS to 1. The script now strictly handles a single boss health bar at a time globally.
-* Shifted from Polling to Smart Event-Driven System: The original script completely reconstructed strings and hammered the network 40 times per second per player. This version uses a lightweight 1.0-second background checker that only triggers a full HUD draw/network broadcast when a true map state change happens (Damage, Connect, or Respawn).
-* Removed Visual PVS Logic: Stripped out the SPAWNFLAG_HEALTHBAR_PVS_ONLY flag and its expensive inPVS() visibility checking loops. The health bar is now completely global and works perfectly regardless of player positions.
+Add this point class block to your map editor's `.fgd` file to expose the custom entity to level designers:
 
-**Code Cleanup & Variable Removals**
-* Removed Dual-Bar Spacing Logic: Completely removed the m_flOffset variable, the unused ShouldDrawText() helper function, and the GetHealthbarOffset() function.
-* Cleaned Up KeyValue Inputs: Removed the unused offset configuration block from the map data interpreter (KeyValue), cleaning up unnecessary parameters.
-* Array Adjustments: Rewrote all tracking indexes from dual-index tracking [0] & [1] down to a single index [0].
+```fgd
+@PointClass base(EditorFlags) color(220 0 0) size(-8 -8 -8, 8 8 8) = game_textbar : "Text-Based Boss Healthbar (Ultra-Optimized)"
+[
+    targetname(target_source) : "Name" : "" : "The unique name of this healthbar entity so other map entities can trigger or target it."
+    target(target_destination) : "Boss Targetname" : "" : "The targetname of the monster, player, or breakable object whose health you want to track."
+    
+    spawnflags(Flags) =
+    [
+        1 : "Start Inactive (Requires Trigger Use)" : 0
+    ]
 
-**Optimization & Feature Additions**
-* Expanded Bar Length (50 ➔ 60): Adjusted m_iMaxCharacters to 60 for a wider, cleaner bar visual. This length fits perfectly across standard resolutions down to 640x480 without text-wrapping or clipping.
-* Added Smart Memory Checkers: Introduced m_iLastBarValue and m_flLastRefreshTime to remember the state of the last update. If the boss takes zero damage, the server completely skips rebuilding strings and wasting bandwidth.
-* Added Join & Respawn Interceptor: Added a high-speed player tracking function GetPlayerCounts() alongside m_iLastConnectedCount and m_iLastAliveCount. If a new player enters the server or a dead player respawns, the script catches it instantly on the next 1-second interval and forces a screen redraw.
-* Implemented Long Hold-Time Strategy: Pushed the default holdTime and m_flFailsafeInterval up to a massive 60 seconds, reducing normal background network chatter to an absolute crawl.
-* Added "Clear Message" Death Safety Protocol: Added the ClearBossHUD() function. When a boss dies (or when the entity is removed by the map), the script sends a zero-second blank message to completely wipe text channel 1 off everyone's screens instantly, preventing the long 60-second bar from freezing on screen.
+    message(string) : "Custom Boss Name Override" : "" : "Optional custom name text to show on the HUD. If left blank, it automatically searches for the target's Player Name or DisplayName. Falls back to 'Boss' if completely empty. [Default: Blank]"
+    delay(string) : "Post-Death Delay Duration" : "0.0" : "How many seconds the empty healthbar stays on the players' screen after the boss dies before vanishing completely. [Default: 0.0]"
+    
+    color(string) : "HUD Bar Color (R G B)" : "255 0 0" : "The text color of the boss name and health matrix bar formatted as three space-separated integers between 0 and 255. [Default: 255 0 0]"
+    x(string) : "Horizontal Position (X)" : "-1.0" : "Horizontal placement on screen. Use -1.0 for a clean, absolute screen centering alignment. [Default: -1.0]"
+    y(string) : "Vertical Position (Y)" : "0.08" : "Vertical placement on screen, starting from top (0.0) down to bottom (1.0). Sits near the top edge. [Default: 0.08]"
+    channel(choices) : "HUD Text Channel" : 1 =
+    [
+        1 : "Channel 1 (Default)"
+        2 : "Channel 2"
+        3 : "Channel 3"
+        4 : "Channel 4"
+    ]
+]

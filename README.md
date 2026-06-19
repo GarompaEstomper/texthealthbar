@@ -2,9 +2,9 @@ A heavy modification fork of target_healthbar by Nero: https://github.com/Neyami
 
 # Sven Co-op Dynamic Boss Healthbar Script (game_textbar)
 
-An ultra-optimized, event-driven AngelScript custom entity for **Sven Co-op** that renders a global boss healthbar using clean, centrally aligned HUD text parameters. 
+An ultra-optimized, event-driven AngelScript custom entity for **Sven Co-op** that renders a global boss healthbar using clean, centrally aligned HUD game_text. 
 
-This script completely replaces old, unoptimized sprite-based variations. It eliminates massive server lag by moving away from constant high-frequency polling loops and replaces them with an efficient event-based system that only broadcasts data across the network when actual changes occur.
+It eliminates massive server lag by moving away from constant high-frequency polling loops with sprites and replaces them with an efficient event-based system that only broadcasts data across the network when actual changes occur.
 
 ---
 
@@ -18,9 +18,10 @@ This script completely replaces old, unoptimized sprite-based variations. It eli
   2. A new player joins the server.
   3. A dead player respawns (catching HUD wipes instantly).
 * **60-Character Dynamic UI:** Carefully tuned to a 60-character maximum length (`||||----`), optimizing screen width for 1080p+ widescreen monitors while staying perfectly safe from text-wrapping breaks on retro low-resolution screens (like 640x480).
-* **Automatic Name Cascade with Failsafe:** Zero setup required for basic naming. The entity automatically loops through an optimized hierarchy to grab names (`Custom message override` ➔ `Player Network Profile name` ➔ `Sven Co-op Monster DisplayName`). If all are blank, it defaults directly to an epic **"Boss"** identifier instead of leaking ugly raw engine classnames.
+* **Automatic Name Cascade with Failsafe:** Zero setup required for basic naming. The entity automatically loops through an optimized hierarchy to grab names (`Custom message override` ➔ `Player Network Profile name` ➔ `Sven Co-op Monster DisplayName` ➔ `func_breakable DisplayName`). If all are blank, it defaults directly to an epic **"Boss"** identifier instead of leaking ugly raw engine classnames.
 * **Low-Health Edge-Case Protection:** Includes mathematical clamping protection. If a boss's health falls so low that calculations round down to 0 characters, the script forces a single visual tick (`|------`) to remain visible on the HUD. This keeps the execution loop alive and prevents the UI from prematurely disappearing while the boss is still fighting.
 * **Dynamic Post-Death Expiration Protocol:** Completely fixes lingering text problems. When the boss dies, the script dynamically overrides its massive network-saving hold time with the mapper's exact `delay` duration, forcing the text channel to naturally expire and flush out of the engine's internal buffer perfectly.
+* To make the bar respawnable, you must use trigger_createentity
 
 ---
 

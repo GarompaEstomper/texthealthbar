@@ -1,8 +1,15 @@
 /*QUAKED game_textbar (0 1 0) (-8 -8 -8) (8 8 8) START_INACTIVE
 * Hook up health bars to monsters/breakables using safe, ultra-optimized HUD text rendering.
+* Supports up to 2 targets displayed simultaneously on a single HUD channel.
 * "delay" is how long to show the health bar for after death.
-* "message" is their name (Overrides automatic naming)
-* "color" is the text color (R G B format, e.g., 255 0 0)
+* "target" can be a single name or two names separated by a semicolon (e.g., boss1;boss2)
+* "message" is their name (Overrides automatic naming. Separate with semicolon for two names: Name1;Name2)
+* "color" is the primary text color (R G B format, e.g., 255 0 0)
+* "color2" is the effect / typewriter background color (R G B format, e.g., 255 255 255)
+* "effect" is the text effect (0 = Fade in/out, 1 = Credits/Flicker, 2 = Scan out)
+* "fadein" is the fade-in or character transition speed (Default: 0.03)
+* "fadeout" is the fade-out speed.
+* "fxtime" is the typewriter letter delay speed for Scan Out (Default: 1.0)
 * "x" is the horizontal screen position (-1.0 for center)
 * "y" is the vertical screen position (0.0 to 1.0)
 * "channel" is the HUD text channel to use (1-4)
@@ -13,35 +20,58 @@ namespace game_textbar
 
 const int SF_START_INACTIVE = 1;
 const int MAX_HEALTH_BARS   = 1;
+const uint MAX_TARGETS      = 2; 
 
 array<EHandle> health_bar_entities( MAX_HEALTH_BARS );
 
 class game_textbar : ScriptBaseEntity
 {
-    private EHandle m_hTarget;
+    private array<EHandle> m_hTargets( MAX_TARGETS );
     private float m_flDelay;
-    private int m_iBarValue; // Represents the amount of characters to draw (0 to 60)
+    private array<int> m_iBarValues( MAX_TARGETS );
     private float m_flTimeToRemove;
-    private int m_iMaxCharacters = 60; // 60 characters is safe for 640x480 minimum resolution
+    private int m_iMaxCharacters = 60; 
     private bool m_bIsActive = false;
-    private string m_szBarName = ""; 
+    private array<string> m_szBarNames( MAX_TARGETS ); 
 
     // CUSTOMIZABLE VISUAL PARAMETERS (via KeyValues)
     private uint8 m_r = 255;
     private uint8 m_g = 0;
     private uint8 m_b = 0;
+    private uint8 m_r2 = 100;
+    private uint8 m_g2 = 100;
+    private uint8 m_b2 = 200;
+	
+    private int m_iEffect = 2;
+    private float m_flFadeIn = 0.02;
+    private float m_flFadeOut = 0.02;  
+    private float m_flFxTime = 0.6;
+
     private float m_flX = -1.0;
-    private float m_flY = 0.08;
+    private float m_flY = 0.05; 
     private int m_iChannel = 1;
 
+    // STATE TRACKING FOR SCAN OUT EFFECT
+    private bool m_bFirstDrawDone = false; 
+
     // ULTRA OPTIMIZED REFRESH VARIABLES
-    private int m_iLastBarValue = -1;        // Stores the bar value from the previous second
-    private float m_flLastRefreshTime = 0.0;  // Tracks when we last physically updated the HUD
-    private float m_flFailsafeInterval = 60.0; // Humongous 60-second fallback to save massive resources
+    private array<int> m_iLastBarValues( MAX_TARGETS ); 
+    private float m_flLastRefreshTime = 0.0; 
+    private float m_flFailsafeInterval = 60.0; 
 
     // JOIN & RESPAWN DETECTION TRACKERS
-    private int m_iLastConnectedCount = 0;   // Tracks how many total players are on the server
-    private int m_iLastAliveCount = 0;       // Tracks how many players are currently alive
+    private int m_iLastConnectedCount = 0; 
+    private int m_iLastAliveCount = 0; 
+
+    game_textbar()
+    {
+        for( uint i = 0; i < MAX_TARGETS; i++ )
+        {
+            m_iBarValues[i] = m_iMaxCharacters;
+            m_iLastBarValues[i] = -1;
+            m_szBarNames[i] = "";
+        }
+    }
 
     bool KeyValue( const string& in szKey, const string& in szValue )
     {
@@ -59,6 +89,37 @@ class game_textbar : ScriptBaseEntity
                 m_g = uint8( atoi(rgb[1]) );
                 m_b = uint8( atoi(rgb[2]) );
             }
+            return true;
+        }
+        else if( szKey == "color2" )
+        {
+            array<string> rgb = szValue.Split(" ");
+            if( rgb.length() >= 3 )
+            {
+                m_r2 = uint8( atoi(rgb[0]) );
+                m_g2 = uint8( atoi(rgb[1]) );
+                m_b2 = uint8( atoi(rgb[2]) );
+            }
+            return true;
+        }
+        else if( szKey == "effect" )
+        {
+            m_iEffect = atoi( szValue );
+            return true;
+        }
+        else if( szKey == "fadein" )
+        {
+            m_flFadeIn = atof( szValue );
+            return true;
+        }
+        else if( szKey == "fadeout" )
+        {
+            m_flFadeOut = atof( szValue );
+            return true;
+        }
+        else if( szKey == "fxtime" )
+        {
+            m_flFxTime = atof( szValue );
             return true;
         }
         else if( szKey == "x" )
@@ -91,9 +152,7 @@ class game_textbar : ScriptBaseEntity
             return;
         }
 
-        m_iBarValue = m_iMaxCharacters;
         SetUse( UseFunction(this.use_game_textbar) );
-
         if( (pev.spawnflags & SF_START_INACTIVE) != 0 )
         {
             m_bIsActive = false;
@@ -110,21 +169,9 @@ class game_textbar : ScriptBaseEntity
         this.use_game_textbar( null, null, USE_TOGGLE, 0.0 );
     }
 
-    void check_game_textbar()
-    {
-        CBaseEntity@ target = g_EntityFuncs.FindEntityByTargetname( null, string(pev.target) );
-        if( target is null )
-        {
-            ClearBossHUD();
-            g_EntityFuncs.Remove( self );
-            return;
-        }
-    }
-
     void HealthbarThink()
     {
         UpdateHealthbarValue();
-
         if( m_flTimeToRemove > 0.0 )
             return;
 
@@ -133,7 +180,6 @@ class game_textbar : ScriptBaseEntity
         GetPlayerCounts(currentConnected, currentAlive);
 
         bool forceRefresh = false;
-
         if( currentConnected != m_iLastConnectedCount or currentAlive > m_iLastAliveCount )
         {
             forceRefresh = true;
@@ -142,14 +188,27 @@ class game_textbar : ScriptBaseEntity
         m_iLastConnectedCount = currentConnected;
         m_iLastAliveCount = currentAlive;
 
-        if( m_iBarValue != m_iLastBarValue or forceRefresh or (g_Engine.time - m_flLastRefreshTime) >= m_flFailsafeInterval )
+        bool valueChanged = false;
+        for( uint i = 0; i < MAX_TARGETS; i++ )
+        {
+            if( m_hTargets[i].IsValid() && m_iBarValues[i] != m_iLastBarValues[i] )
+            {
+                valueChanged = true;
+                break;
+            }
+        }
+
+        if( valueChanged or forceRefresh or (g_Engine.time - m_flLastRefreshTime) >= m_flFailsafeInterval )
         {
             DrawText( m_flFailsafeInterval + 0.1 );
-            m_iLastBarValue = m_iBarValue;
+            for( uint i = 0; i < MAX_TARGETS; i++ )
+            {
+                m_iLastBarValues[i] = m_iBarValues[i];
+            }
             m_flLastRefreshTime = g_Engine.time;
         }
 
-        pev.nextthink = g_Engine.time + 1.0;
+        pev.nextthink = g_Engine.time + 0.2; 
     }
 
     void use_game_textbar( CBaseEntity@ pActivator, CBaseEntity@ pCaller, USE_TYPE useType, float flValue )
@@ -158,103 +217,186 @@ class game_textbar : ScriptBaseEntity
         {
             if( health_bar_entities[0].GetEntity() is self )
                 return;
-
             g_Game.AlertMessage( at_error, "%1: too many health bars active\n", self.GetClassname() );
             g_EntityFuncs.Remove( self );
             return;
         }
 
-        CBaseEntity@ target = g_EntityFuncs.FindEntityByTargetname( null, string(pev.target) );
-        if( target is null )
+        health_bar_entities[0] = EHandle( self );
+
+        array<string> targetNames = string(pev.target).Split(";");
+        array<string> overrideNames = string(pev.message).Split(";");
+
+        uint foundTargets = 0;
+        
+        for( uint i = 0; i < MAX_TARGETS; i++ )
+        {
+            string currentSearchName = (i < targetNames.length()) ? targetNames[i] : targetNames[0];
+            CBaseEntity@ target = null;
+
+            if( i == 1 && targetNames.length() == 1 )
+            {
+                @target = g_EntityFuncs.FindEntityByTargetname( m_hTargets[0].GetEntity(), currentSearchName );
+            }
+            else
+            {
+                @target = g_EntityFuncs.FindEntityByTargetname( null, currentSearchName );
+            }
+
+            if( target is null )
+                continue;
+
+            m_hTargets[foundTargets] = EHandle( target );
+
+            if( i < overrideNames.length() && !overrideNames[i].IsEmpty() )
+            {
+                m_szBarNames[foundTargets] = overrideNames[i];
+            }
+            else if( target.pev.FlagBitSet(FL_CLIENT) )
+            {
+                m_szBarNames[foundTargets] = string( target.pev.netname );
+            }
+            else if( target.pev.FlagBitSet(FL_MONSTER) )
+            {
+                CBaseMonster@ pMonster = target.MyMonsterPointer();
+                if( pMonster !is null && !string(pMonster.m_FormattedName).IsEmpty() )
+                {
+                    m_szBarNames[foundTargets] = string( pMonster.m_FormattedName );
+                }
+                else if( !string(target.pev.message).IsEmpty() )
+                {
+                    m_szBarNames[foundTargets] = string( target.pev.message );
+                }
+                else
+                {
+                    m_szBarNames[foundTargets] = "Boss " + (foundTargets + 1);
+                }
+            }
+            else if( !string(target.pev.message).IsEmpty() )
+            {
+                m_szBarNames[foundTargets] = string( target.pev.message );
+            }
+            else
+            {
+                m_szBarNames[foundTargets] = "Boss " + (foundTargets + 1);
+            }
+
+            foundTargets++;
+        }
+
+        if( foundTargets == 0 )
         {
             pev.nextthink = g_Engine.time + 1.0;
             if( pActivator is null )
                 SetThink( ThinkFunction(this.AutoStartThink) );
             else
-                g_Game.AlertMessage( at_error, "%1: cannot find target '%2' on Use activation\n", self.GetClassname(), string(pev.target) );
+                g_Game.AlertMessage( at_error, "%1: cannot find any targets on Use activation\n", self.GetClassname() );
             return;
-        }
-
-        m_hTarget = EHandle( target );
-        health_bar_entities[0] = EHandle( self );
-
-        // 1. Priority Override: Did the mapper set a custom message name directly on this textbar?
-        if( !string(pev.message).IsEmpty() )
-        {
-            m_szBarName = string( pev.message );
-        }
-        // 2. Is the target a player? Use their network handle profile name
-        else if( target.pev.FlagBitSet(FL_CLIENT) )
-        {
-            m_szBarName = string( target.pev.netname );
-        }
-        // 3. Mimicking Original Script: Extract Sven's auto-processed displayname formatting safely
-        else if( target.pev.FlagBitSet(FL_MONSTER) )
-        {
-            CBaseMonster@ pMonster = target.MyMonsterPointer();
-            if( pMonster !is null && !string(pMonster.m_FormattedName).IsEmpty() )
-            {
-                m_szBarName = string( pMonster.m_FormattedName );
-            }
-            else if( !string(target.pev.message).IsEmpty() )
-            {
-                m_szBarName = string( target.pev.message );
-            }
-            else
-            {
-                m_szBarName = "Boss";
-            }
-        }
-        // 4. Final Fallback if targeted at a breakable wall or general entity
-        else if( !string(target.pev.message).IsEmpty() )
-        {
-            m_szBarName = string( target.pev.message );
-        }
-        else
-        {
-            m_szBarName = "Boss";
         }
 
         GetPlayerCounts(m_iLastConnectedCount, m_iLastAliveCount);
 
         m_bIsActive = true;
+        m_bFirstDrawDone = false; 
         SetThink( ThinkFunction(this.HealthbarThink) );
         pev.nextthink = g_Engine.time + 0.1;
     }
 
+    // CHECK IF ALL POTENTIAL BOSSES ARE ALREADY DEAD
+    bool AreAllTargetsDead()
+    {
+        for( uint i = 0; i < MAX_TARGETS; i++ )
+        {
+            if( !m_hTargets[i].IsValid() )
+                continue;
+
+            CBaseEntity@ pTargetEnt = m_hTargets[i].GetEntity();
+            if( pTargetEnt !is null && pTargetEnt.pev.health > 0 && pTargetEnt.pev.deadflag == DEAD_NO )
+            {
+                return false; 
+            }
+        }
+        return true;
+    }
+
     void DrawText( float flCustomHoldTime )
     {
-        string sHealthBarVisual = "";
+        string sFinalHUDMessage = "";
+        bool bFirstAdded = false;
+        bool bShowAllDeadDelay = (m_flTimeToRemove > 0.0);
 
-        for( int i = 0; i < m_iBarValue; i++ )
+        for( uint idx = 0; idx < MAX_TARGETS; idx++ )
         {
-            sHealthBarVisual += "|";
+            if( !m_hTargets[idx].IsValid() )
+                continue;
+
+            // DYNAMIC LAYOUT REARRANGEMENT: 
+            // If the boss is dead, don't draw it at all, EXCEPT if ALL bosses are dead and we are currently processing the post-death delay.
+            if( m_iBarValues[idx] <= 0 && !bShowAllDeadDelay )
+                continue;
+
+            string sHealthBarVisual = "";
+            for( int i = 0; i < m_iBarValues[idx]; i++ )
+            {
+                sHealthBarVisual += "|";
+            }
+
+            int emptyCharacters = m_iMaxCharacters - m_iBarValues[idx];
+            for( int i = 0; i < emptyCharacters; i++ )
+            {
+                sHealthBarVisual += "-";
+            }
+
+            if( bFirstAdded )
+                sFinalHUDMessage += "\n\n"; 
+
+            sFinalHUDMessage += m_szBarNames[idx] + "\n" + sHealthBarVisual;
+            bFirstAdded = true;
         }
 
-        int emptyCharacters = m_iMaxCharacters - m_iBarValue;
-        for( int i = 0; i < emptyCharacters; i++ )
+        if( !sFinalHUDMessage.IsEmpty() )
         {
-            sHealthBarVisual += "-";
+            CG_DrawHUDStringAll( sFinalHUDMessage, flCustomHoldTime );
         }
-
-        string sFinalHUDMessage = m_szBarName + "\n" + sHealthBarVisual;
-        CG_DrawHUDStringAll( sFinalHUDMessage, flCustomHoldTime );
+        else
+        {
+            // Failsafe: if layout results in an empty message, clear the screen
+            ClearBossHUD();
+        }
     }
 
     void CG_DrawHUDStringAll( const string &in sString, float flHoldTime )
     {
         HUDTextParams textParms;
-        textParms.fadeinTime = 0.0;
-        textParms.fadeoutTime = 0.02;
-        textParms.holdTime = flHoldTime;
-        textParms.effect = 0;
         textParms.channel = m_iChannel;
-        textParms.x = m_flX; 
+        textParms.x = m_flX;
         textParms.y = m_flY;
+        textParms.holdTime = flHoldTime;
+        
+        if( !m_bFirstDrawDone )
+        {
+            textParms.effect = m_iEffect;
+            textParms.fadeinTime = m_flFadeIn;
+            textParms.fadeoutTime = m_flFadeOut;
+            textParms.fxTime = m_flFxTime;
+        }
+        else
+        {
+            textParms.effect = 0;
+            textParms.fadeinTime = 0.0;
+            textParms.fadeoutTime = 0.0;
+            textParms.fxTime = 0.0;
+        }
+        
         textParms.r1 = m_r;  textParms.g1 = m_g;  textParms.b1 = m_b;
-        textParms.r2 = m_r;  textParms.g2 = m_g;  textParms.b2 = m_b;
+        textParms.r2 = m_r2; textParms.g2 = m_g2; textParms.b2 = m_b2;
 
         g_PlayerFuncs.HudMessageAll( textParms, sString + "\n" );
+
+        if( !m_bFirstDrawDone )
+        {
+            m_bFirstDrawDone = true;
+        }
     }
 
     void ClearBossHUD()
@@ -275,35 +417,48 @@ class game_textbar : ScriptBaseEntity
         {
             if( m_flTimeToRemove < g_Engine.time )
             {
-                ClearBossHUD(); 
+                ClearBossHUD();
                 g_EntityFuncs.Remove( self );
             }
+            return;
         }
-        else
+
+        bool allDead = AreAllTargetsDead();
+
+        for( uint i = 0; i < MAX_TARGETS; i++ )
         {
-            if( !m_hTarget.IsValid() or m_hTarget.GetEntity().pev.health <= 0 or m_hTarget.GetEntity().pev.deadflag != DEAD_NO )
+            if( !m_hTargets[i].IsValid() )
+                continue;
+
+            CBaseEntity@ pTargetEnt = m_hTargets[i].GetEntity();
+
+            if( pTargetEnt is null or pTargetEnt.pev.health <= 0 or pTargetEnt.pev.deadflag != DEAD_NO )
             {
-                if( m_flDelay > 0.0 )
-                {
-                    m_flTimeToRemove = g_Engine.time + m_flDelay;
-                    m_iBarValue = 0; 
-                    DrawText( m_flDelay ); 
-                }
-                else
-                {
-                    ClearBossHUD(); 
-                    g_EntityFuncs.Remove( self );
-                }
-    
-                return;
+                // Force dead bosses to 0 layout length so they get filtered out of the layout
+                m_iBarValues[i] = 0; 
+                continue; 
             }
 
-            float health_remaining = m_hTarget.GetEntity().pev.health / m_hTarget.GetEntity().pev.max_health;
-            m_iBarValue = int( health_remaining * float(m_iMaxCharacters) );
+            float health_remaining = pTargetEnt.pev.health / pTargetEnt.pev.max_health;
+            m_iBarValues[i] = int( health_remaining * float(m_iMaxCharacters) );
 
-            if( m_iBarValue <= 0 )
+            if( m_iBarValues[i] <= 0 )
             {
-                m_iBarValue = 1;
+                m_iBarValues[i] = 1;
+            }
+        }
+
+        if( allDead )
+        {
+            if( m_flDelay > 0.0 )
+            {
+                m_flTimeToRemove = g_Engine.time + m_flDelay;
+                DrawText( m_flDelay ); 
+            }
+            else
+            {
+                ClearBossHUD();
+                g_EntityFuncs.Remove( self );
             }
         }
     }
@@ -328,7 +483,7 @@ class game_textbar : ScriptBaseEntity
 
     void UpdateOnRemove()
     {
-        ClearBossHUD(); 
+        ClearBossHUD();
         health_bar_entities[0] = EHandle();
         BaseClass.UpdateOnRemove();
     }

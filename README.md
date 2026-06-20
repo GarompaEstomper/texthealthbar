@@ -41,6 +41,7 @@ Add this point class block to your map editor's `.fgd` file to expose the custom
     spawnflags(Flags) =
     [
         1 : "Start Inactive (Requires Trigger Use)" : 0
+        2 : "Start With Scan Out Effect" : 0
     ]
 
     message(string) : "Custom Boss Name Override" : "" : "Optional custom name text to show on the HUD. Separate with a semicolon for two names: Name1;Name2. If left blank, it automatically searches for the target's Player Name or DisplayName. [Default: Blank]"
@@ -53,7 +54,6 @@ Add this point class block to your map editor's `.fgd` file to expose the custom
     [
         0 : "Fade In / Fade Out (Default)"
         1 : "Credits / Flicker / Flashing"
-        2 : "Scan Out (Typewriter style)"
     ]
     
     fadein(string) : "Fade-In Speed / Character Time" : "0.02" : "Duration of the entry fade-in, or delay per character transition speed. [Default: 0.02]"

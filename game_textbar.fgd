@@ -1,24 +1,38 @@
 @PointClass base(EditorFlags) color(220 0 0) size(-8 -8 -8, 8 8 8) = game_textbar : "Text-Based Boss Healthbar (Ultra-Optimized)"
 [
     targetname(target_source) : "Name of the bar" 
-    target(target_destination) : "Boss targetname to track"
+    target(target_destination) : "Boss targetname to track" : : "Supports up to 2 targets separated by a semicolon (e.g., boss1;boss2)"
     
-    spawnflags(Flags) =
-    [
-        1 : "Start Inactive" : 0
-    ]
+    spawnflags(flags) =
+	[
+		1 : "Start Inactive" : 0
+		2 : "Start with Scan-Out Typewriter Intro" : 0
+	]
 
-    message(string) : "Optional custom HUD name for the boss" : "" : "(default is the boss displayname, or 'boss' if not found)"
-    delay(string) : "Post-Death Duration" : "0.0" : "How many seconds the empty healthbar stays on the players' screen after the boss dies"
+    message(string) : "Optional custom HUD name for the boss" : "" : "Separate with a semicolon for two names: Name1;Name2 (default is automatic naming)"
+    delay(string) : "Post-Death Duration" : "0.0" : "How many seconds the empty healthbar stays on the players' screen after ALL tracked targets die"
     
-    color(string) : "HUD Bar Color (R G B)" : "" : "255 0 0 (default)"
-    x(string) : "Horizontal Position (X)" : "" : "-1.0 (default centered)"
-    y(string) : "Vertical Position (Y)" : "" : "0.08 (default top)"
-    channel(choices) : "HUD Text Channel" : 1 =
-    [
-        1 : "Channel 1 (Default)"
-        2 : "Channel 2"
-        3 : "Channel 3"
-        4 : "Channel 4"
-    ]
+    color(color255) : "Primary Text/Bar Color" : "255 0 0" : "The main color of the health bar and text."
+	color2(color255) : "Scan-Out Effect Color" : "255 255 255" : "The highlight/typewriter background color used during the scan-out intro effect."
+    
+    effect(choices) : "Persistent Text Effect" : 0 =
+	[
+		0 : "Normal"
+		1 : "Credits / Flicker"
+	]
+    
+    fadein(string) : "Fade-In Speed" : "0.0" : "Fade-in transition speed. Recommended: 0.0 for normal, 0.03 for credits flicker."
+	fadeout(string) : "Fade-Out Speed" : "0.02" : "Fade-out transition speed."
+	fxtime(string) : "Scan-Out Letter Speed" : "0.06" : "Typewriter character presentation speed (delay per letter) during the scan-out intro. Lower values are faster."
+
+    x(string) : "X Position (-1 = Center)" : "-1.0" : "Horizontal position on screen. Values from 0.0 to 1.0, or -1.0 to center perfectly."
+	y(string) : "Y Position" : "0.08" : "Vertical position on screen. Values from 0.0 to 1.0 (0.0 is the very top)."
+    
+    channel(choices) : "HUD Channel" : 1 =
+	[
+		1 : "Channel 1"
+		2 : "Channel 2"
+		3 : "Channel 3"
+		4 : "Channel 4"
+	]
 ]
